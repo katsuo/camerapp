@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#4F46E5">
+    <meta name="description" content="Gestionnaire de photos - Créez des dossiers et prenez des photos">
+    <title>Gestionnaire Photos</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: system-ui, -apple-system, sans-serif; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script type="text/babel">
+        const { useState, useRef, useEffect } = React;
+
+        // Lucide Icons as SVG components
+        const Camera = () => (
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                <circle cx="12" cy="13" r="4"/>
+            </svg>
+        );
+
+        const FolderPlus = () => (
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                <line x1="12" y1="11" x2="12" y2="17"/>
+                <line x1="9" y1="14" x2="15" y2="14"/>
+            </svg>
+        );
+
+        const Check = () => (
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="20 6 9 17 4 12"/>
+            </svg>
+        );
+
+        const X = () => (
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="18" y1="6" x2="6" y2="18"/>
+                <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+        );
+
+        const Trash2 = () => (
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="3 6 5 6 21 6"/>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+            </svg>
+        );
+
+        function PhotoFolderApp() {
+            const [currentFolder, setCurrentFolder] = useState(null);
+            const [showCreateFolder, setShowCreateFolder] = useState(false);
+            const [folderName, setFolderName] = useState('');
+            const [photos, setPhotos] = useState([]);
+            const [showCamera, setShowCamera] = useState(false);
+            const [stream, setStream] = useState(null);
+            const fileInputRef = useRef(null);
+            const videoRef = useRef(null);
+            const canvasRef = useRef(null);
+
+            useEffect(() => {
+                // Register Service Worker
+                if ('serviceWorker' in navigator) {
+                    navigator.serviceWorker.register('sw.js')
+                        .then(reg => console.log('Service Worker enregistré', reg))
+                        .catch(err => console.log('Erreur Service Worker', err));
+                }
+            }, []);
+
+            const handleCreateFolder = () => {
+                if (folderName.trim()) {
+                    setCurrentFolder({
+                        name: folderName,
+                        createdAt: new Date().toLocaleString('fr-FR')
+                    });
+                    setFolderName('');
+                    setShowCreateFolder(false);
+                    setPhotos([]);
+                }
+            };
+
+            const handleAddPhoto = (e) => {
+                const files = Array.from(e.target.files);
+                const newPhotos = files.map(file => ({
+                    id: Date.now() + Math.random(),
+                    url: URL.createObjectURL(file),
+                    name: file.name,
+                    addedAt: new Date().toLocaleTimeString('fr-FR')
+                }));
+                setPhotos([...photos, ...newPhotos]);
+            };
+
+            const startCamera = async () => {
+                try {
+                    const mediaStream = await navigator.mediaDevices.getUserMedia({ 
+                        video: { facingMode: 'environment' },
+                        audio: false 
+                    });
+                    setStream(mediaStream);
+                    setShowCamera(true);
+                    setTimeout(() => {
+                        if (videoRef.current) {
+                            videoRef.current.srcObject = mediaStream;
+                        }
+                    }, 100);
+                } catch (err) {
+                    alert('Impossible d\'accéder à la caméra. Vérifiez les permissions.');
+                    console.error(err);
+                }
+            };
+
+            const stopCamera = () => {
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
+                    setStream(null);
+                }
+                setShowCamera(false);
+            };
+
+            const capturePhoto = () => {
+                if (videoRef.current && canvasRef.current) {
+                    const video = videoRef.current;
+                    const canvas = canvasRef.current;
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(video, 0, 0);
+                    
+                    canvas.toBlob((blob) => {
+                        const url = URL.createObjectURL(blob);
+                        const newPhoto = {
+                            id: Date.now(),
+                            url: url,
+                            name: `Photo_${new Date().toLocaleString('fr-FR')}.jpg`,
+                            addedAt: new Date().toLocaleTimeString('fr-FR')
+                        };
+                        setPhotos([...photos, newPhoto]);
+                    }, 'image/jpeg');
+                }
+            };
+
+            const handleDeletePhoto = (photoId) => {
+                setPhotos(photos.filter(p => p.id !== photoId));
+            };
+
+            const handleFinish = () => {
+                if (window.confirm(`Voulez-vous terminer et fermer le dossier "${currentFolder.name}" avec ${photos.length} photo(s) ?`)) {
+                    stopCamera();
+                    setCurrentFolder(null);
+                    setPhotos([]);
+                }
+            };
+
+            const handleCancelCreate = () => {
+                setShowCreateFolder(false);
+                setFolderName('');
+            };
+
+            return (
+                <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+                    <div className="max-w-4xl mx-auto">
+                        {/* Header */}
+                        <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 text-indigo-600"><Camera /></div>
+                                    <h1 className="text-2xl font-bold text-gray-800">Gestionnaire de Photos</h1>
+                                </div>
+                                {currentFolder && (
+                                    <button
+                                        onClick={handleFinish}
+                                        className="flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg transition-colors"
+                                    >
+                                        <div className="w-5 h-5"><Check /></div>
+                                        Terminer
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Folder Status */}
+                        {!currentFolder && !showCreateFolder && (
+                            <div className="bg-white rounded-lg shadow-lg p-8 text-center">
+                                <div className="w-16 h-16 text-gray-400 mx-auto mb-4"><FolderPlus /></div>
+                                <h2 className="text-xl font-semibold text-gray-700 mb-2">
+                                    Aucun dossier actif
+                                </h2>
+                                <p className="text-gray-500 mb-6">
+                                    Créez un nouveau dossier pour commencer à sauvegarder vos photos
+                                </p>
+                                <button
+                                    onClick={() => setShowCreateFolder(true)}
+                                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-lg font-medium transition-colors"
+                                >
+                                    Créer un nouveau dossier
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Create Folder Form */}
+                        {showCreateFolder && (
+                            <div className="bg-white rounded-lg shadow-lg p-6">
+                                <h2 className="text-xl font-semibold text-gray-800 mb-4">
+                                    Créer un nouveau dossier
+                                </h2>
+                                <div className="flex gap-3">
+                                    <input
+                                        type="text"
+                                        value={folderName}
+                                        onChange={(e) => setFolderName(e.target.value)}
+                                        onKeyPress={(e) => e.key === 'Enter' && handleCreateFolder()}
+                                        placeholder="Nom du dossier (ex: Vacances 2025)"
+                                        className="flex-1 px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-indigo-500 focus:outline-none"
+                                        autoFocus
+                                    />
+                                    <button
+                                        onClick={handleCreateFolder}
+                                        disabled={!folderName.trim()}
+                                        className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-300 text-white px-6 py-2 rounded-lg transition-colors"
+                                    >
+                                        Créer
+                                    </button>
+                                    <button
+                                        onClick={handleCancelCreate}
+                                        className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-6 py-2 rounded-lg transition-colors"
+                                    >
+                                        <div className="w-5 h-5"><X /></div>
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Active Folder */}
+                        {currentFolder && (
+                            <div className="space-y-6">
+                                {/* Folder Info */}
+                                <div className="bg-white rounded-lg shadow-lg p-6">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <div>
+                                            <h2 className="text-xl font-semibold text-gray-800">
+                                                📁 {currentFolder.name}
+                                            </h2>
+                                            <p className="text-sm text-gray-500">
+                                                Créé le {currentFolder.createdAt}
+                                            </p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="text-2xl font-bold text-indigo-600">
+                                                {photos.length}
+                                            </p>
+                                            <p className="text-sm text-gray-500">photo(s)</p>
+                                        </div>
+                                    </div>
+
+                                    {/* Add Photo Button */}
+                                    <input
+                                        type="file"
+                                        ref={fileInputRef}
+                                        onChange={handleAddPhoto}
+                                        accept="image/*"
+                                        multiple
+                                        className="hidden"
+                                    />
+                                    <div className="flex gap-3">
+                                        <button
+                                            onClick={startCamera}
+                                            className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+                                        >
+                                            <div className="w-5 h-5"><Camera /></div>
+                                            Prendre une photo
+                                        </button>
+                                        <button
+                                            onClick={() => fileInputRef.current?.click()}
+                                            className="flex-1 bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+                                        >
+                                            <div className="w-5 h-5"><FolderPlus /></div>
+                                            Importer
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Camera Modal */}
+                                {showCamera && (
+                                    <div className="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center p-4">
+                                        <div className="bg-white rounded-lg max-w-2xl w-full p-4">
+                                            <div className="flex justify-between items-center mb-4">
+                                                <h3 className="text-xl font-semibold">Caméra</h3>
+                                                <button
+                                                    onClick={stopCamera}
+                                                    className="text-gray-500 hover:text-gray-700"
+                                                >
+                                                    <div className="w-6 h-6"><X /></div>
+                                                </button>
+                                            </div>
+                                            <div className="relative bg-black rounded-lg overflow-hidden">
+                                                <video
+                                                    ref={videoRef}
+                                                    autoPlay
+                                                    playsInline
+                                                    className="w-full"
+                                                />
+                                                <canvas ref={canvasRef} className="hidden" />
+                                            </div>
+                                            <button
+                                                onClick={capturePhoto}
+                                                className="w-full mt-4 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-lg font-medium transition-colors"
+                                            >
+                                                📸 Capturer
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Photos Grid */}
+                                {photos.length > 0 && (
+                                    <div className="bg-white rounded-lg shadow-lg p-6">
+                                        <h3 className="text-lg font-semibold text-gray-800 mb-4">
+                                            Photos enregistrées
+                                        </h3>
+                                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                                            {photos.map((photo) => (
+                                                <div key={photo.id} className="relative group">
+                                                    <div className="aspect-square rounded-lg overflow-hidden bg-gray-100">
+                                                        <img
+                                                            src={photo.url}
+                                                            alt={photo.name}
+                                                            className="w-full h-full object-cover"
+                                                        />
+                                                    </div>
+                                                    <button
+                                                        onClick={() => handleDeletePhoto(photo.id)}
+                                                        className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                                                    >
+                                                        <div className="w-4 h-4"><Trash2 /></div>
+                                                    </button>
+                                                    <p className="text-xs text-gray-500 mt-1 truncate">
+                                                        {photo.addedAt}
+                                                    </p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {photos.length === 0 && (
+                                    <div className="bg-white rounded-lg shadow-lg p-8 text-center">
+                                        <div className="w-16 h-16 bg-gray-200 rounded-lg mx-auto mb-4 flex items-center justify-center">
+                                            <span className="text-4xl">📷</span>
+                                        </div>
+                                        <p className="text-gray-500">
+                                            Aucune photo dans ce dossier. Ajoutez vos premières photos !
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        ReactDOM.render(<PhotoFolderApp />, document.getElementById('root'));
+    </script>
+
+    <script>
+        // Install prompt
+        let deferredPrompt;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            console.log('PWA peut être installée');
+        });
+    </script>
+</body>
+</html>
